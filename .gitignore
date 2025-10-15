@@ -1,0 +1,11 @@
+# Build folders
+bin/
+obj/
+# User-specific files
+*.user
+*.suo
+*.cache
+# VS Code
+.vscode/
+# Others
+*.log

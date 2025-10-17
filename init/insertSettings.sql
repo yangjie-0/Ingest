@@ -260,13 +260,12 @@ INSERT INTO m_attr_definition (
 (32, 'PURCHASE_RANK', '仕入ランク', 27, NULL, 'LIST', 'PURCHASE_RANK', 'SINGLE', TRUE, 40, '{}', NULL, NULL, NULL, TRUE, NULL, 'MST', NULL, FALSE, TRUE, TRUE),
 (33, 'SALES_RANK', '販売ランク', 28, NULL, 'LIST', 'SALES_RANK', 'SINGLE', TRUE, 40, '{}', NULL, NULL, NULL, TRUE, NULL, 'MST', NULL, FALSE, TRUE, TRUE);
 
--- 检查到了这里
 INSERT INTO m_ref_table_map (
     ref_map_id, attr_cd, data_source, hop1_table, hop1_match_by, hop1_id_col, 
     hop1_label_col, hop1_return_cols, hop2_table, hop2_join_on_json, hop2_return_cd_col, 
     hop2_return_label_col, is_active, ref_table_remarks
 ) VALUES 
-(1, 'GP_CD', 'MASTER', 'm_company', 'ID', 'group_company_cd', NULL, '{}', NULL, NULL, NULL, NULL, TRUE, NULL),
+(1, 'GP_CD', 'MASTER', 'm_company', 'ID', 'group_company_cd', NULL, '{group_company_cd}', NULL, NULL, NULL, NULL, TRUE, NULL),
 (2, 'BRAND', 'MASTER', 'brand_source_map', 'ID', 'source_brand_id', NULL, '{"g_brand_id"} ', 'm_brand_g', '{"g_brand_id":"g_brand_id"}', 'g_brand_cd', 'g_brand_nm', TRUE, NULL),
 (3, 'CATEGORY_1', 'MASTER', 'category_source_map', 'ID', 'source_category_1_id', NULL, '{"g_category_id"}', 'm_category_g', '{"g_category_id":"g_category_id"}', 'g_category_cd', 'g_category_nm', TRUE, NULL),
 (4, 'CATEGORY_2', 'MASTER', 'category_source_map', 'ID', 'source_category_2_id', NULL, '{"g_category_id"}', 'm_category_g', '{"g_category_id":"g_category_id"}', 'g_category_cd', 'g_category_nm', TRUE, NULL),

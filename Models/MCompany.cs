@@ -1,40 +1,21 @@
 using System;
-using System.Text.Json.Serialization;
-
 namespace ProductDataIngestion.Models
 {
     public class MCompany
     {
-        [JsonPropertyName("groupCompanyId")]
-        public long GroupCompanyId { get; set; }
-
-        [JsonPropertyName("groupCompanyCd")]
+        public string GroupCompanyId { get; set; } = string.Empty;
         public string GroupCompanyCd { get; set; } = string.Empty;
-
-        [JsonPropertyName("groupCompanyNm")]
-        public string? GroupCompanyNm { get; set; }
-
-        [JsonPropertyName("defaultCurrencyCd")]
-        public string? DefaultCurrencyCd { get; set; }
-
-        [JsonPropertyName("isActive")]
-        public bool IsActive { get; set; } = true;
-
-        [JsonPropertyName("creAt")]
-        public DateTime CreAt { get; set; } = DateTime.UtcNow;
-
-        [JsonPropertyName("updAt")]
-        public DateTime UpdAt { get; set; } = DateTime.UtcNow;
+        public string GroupCompanyNm { get; set; } = string.Empty;
+        public string DefaultCurrencyCd { get; set; } = string.Empty;
+        public bool IsActive { get; set; }
+        public DateTime CreAt { get; set; }
+        public DateTime UpdAt { get; set; }
 
         public bool IsValid()
         {
-            return !string.IsNullOrEmpty(GroupCompanyCd) && 
-                   GroupCompanyId > 0;
-        }
-
-        public override string ToString()
-        {
-            return $"MCompany: {GroupCompanyCd} ({GroupCompanyNm}), Currency: {DefaultCurrencyCd}, Active: {IsActive}";
+            return !string.IsNullOrWhiteSpace(GroupCompanyCd) && 
+                   !string.IsNullOrWhiteSpace(GroupCompanyNm) && 
+                   IsActive;
         }
     }
 }

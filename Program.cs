@@ -1,18 +1,31 @@
 using ProductDataIngestion.Services;
+using Microsoft.Extensions.Configuration;  // JSON設定読み込み用
 
 class Program
 {
     static async Task Main(string[] args)
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
-        Console.WriteLine("========================================");
-        Console.WriteLine("  商品データ取込システム");
-        Console.WriteLine("========================================\n");
+        Console.WriteLine("< 商品データ取込システム >");
 
         try
         {
-            // CSV文件路径(请修改为您的实际文件路径)
-            string csvFilePath = @"C:\Users\yang.jie.tw\Documents\ProductDataIngestion\KM商品データ追加ROLEX.csv";
+            // 設定ファイル読み込み
+            var configuration = new ConfigurationBuilder()
+                .SetBasePath(Directory.GetCurrentDirectory())
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .AddEnvironmentVariables()
+                .Build();
+
+            // 設定値取得（nullチェック付き）
+            string csvFilePath = configuration.GetValue<string>("CsvImport:DefaultFilePath") 
+                ?? throw new ArgumentException("エラー: CSVファイルパスが未設定です (appsettings.jsonを確認)");
+            string connectionString = configuration.GetConnectionString("DefaultConnection") 
+                ?? throw new ArgumentException("エラー: データベース接続情報が未設定です (appsettings.jsonを確認)");
+            
+            // 会社コードと用途名で設定を探索
+            string groupCompanyCd = "KM";
+            string targetEntity = "PRODUCT";
 
             // 检查文件是否存在
             if (!File.Exists(csvFilePath))
@@ -20,17 +33,8 @@ class Program
                 Console.WriteLine($"エラー: ファイルが見つかりません: {csvFilePath}");
                 Console.WriteLine("\nサンプルCSVファイルを作成してください:");
                 Console.WriteLine("sample_products.csv に以下の内容:");
-                Console.WriteLine("GP会社コード,商品コード,ブランドID,ブランド名,カテゴリ1ID");
-                Console.WriteLine("KM,0000123456,4952,ROLEX,20");
-                Console.WriteLine("KM,0000123457,4953,OMEGA,20");
                 return;
             }
-
-            // 数据库连接字符串 - 根据您的docker-compose配置
-            string connectionString = "Host=localhost;Port=25432;Database=purchase_system;Username=postgres;Password=user";
-
-            // GP会社コード
-            string groupCompanyCd = "KM";
 
             // 在执行导入之前，先打印 m_data_import_d 的前几条映射以便排查
             try
@@ -59,8 +63,8 @@ class Program
                         Console.WriteLine($"... 还有 {details.Count - take} 条映射未显示");
                 }
 
-                Console.WriteLine("\n已打印映射，程序将退出以避免继续执行导入。如需继续导入，请再次运行程序或移除此打印逻辑。\n");
-                return;
+                //Console.WriteLine("\n已打印映射，程序将退出以避免继续执行导入。如需继续导入，请再次运行程序或移除此打印逻辑。\n");
+                //return;
             }
             catch (Exception ex)
             {
@@ -68,14 +72,17 @@ class Program
                 Console.WriteLine("将继续执行常规流程（导入）\n");
             }
 
-            // 取込サービスのインスタンス作成 - 传入连接字符串
-            var ingestService = new IngestService(connectionString);
+            // Repository インスタンス作成
+            var batchRepository = new ProductDataIngestion.Repositories.BatchRepository(connectionString);
+            var productRepository = new ProductDataIngestion.Repositories.ProductRepository(connectionString);
+
+            // 取込サービスのインスタンス作成 
+            var ingestService = new IngestService(connectionString, batchRepository, productRepository);
 
             // CSV取込処理実行
-            string batchId = await ingestService.ProcessCsvFileAsync(csvFilePath, groupCompanyCd);
-
+            string batchId = await ingestService.ProcessCsvFileAsync(csvFilePath, groupCompanyCd, targetEntity);
+            
             // 結果表示
-            ingestService.PrintResults();
 
             Console.WriteLine($"\nバッチID: {batchId}");
             Console.WriteLine("\n処理が完了しました。");

@@ -22,7 +22,7 @@ namespace ProductDataIngestion.Models
         public string? SourceCategory3Nm { get; set; }
         
         // 商品状态
-        public string? SourceProductStatusCode { get; set; }
+        public string? SourceProductStatusCd { get; set; }
         public string? SourceProductStatusNm { get; set; }
         public string? SourceNewUsedKbn { get; set; }
         public string? SourceQuantity { get; set; }

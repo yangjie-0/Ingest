@@ -111,7 +111,7 @@ namespace ProductDataIngestion.Services
                     transform_expr as TransformExpr,
                     is_required as IsRequired
                 FROM m_data_import_d 
-                WHERE profile_id = @ProfileId
+                WHERE profile_id = @ProfileId 
                 ORDER BY column_seq";
 
             // 获取固定属性映射的SQL查询。

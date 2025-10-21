@@ -255,9 +255,10 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
         {
             var errors = new List<string>();
             var requiredCount = 0;
-            var optionalCount = 0;
 
-            foreach (var detail in importDetails.OrderBy(d => d.ColumnSeq))
+            foreach (var detail in importDetails
+                .Where(d => d.IsRequired)   
+                .OrderBy(d => d.ColumnSeq))
             {
                 // column_seq = 0 は公司コード注入なのでスキップ
                 if (detail.ColumnSeq == 0) continue;
@@ -273,18 +274,13 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
                         errors.Add($"必須列{detail.ColumnSeq} ({detail.AttrCd ?? detail.TargetColumn}) がCSV範囲外 (CSV列数: {headers.Length})");
                         requiredCount++;
                     }
-                    else
-                    {
-                        optionalCount++;
-                        Console.WriteLine($"  [INFO] オプション列{detail.ColumnSeq} ({detail.AttrCd ?? detail.TargetColumn}) はCSVに存在しません (スキップ)");
-                    }
                 }
             }
 
-            Console.WriteLine($"列マッピング検証完了: CSV列数={headers.Length}, 必須列エラー={requiredCount}, オプション列スキップ={optionalCount}");
+            Console.WriteLine($"列マッピング検証完了: CSV列数={headers.Length}, 必須列エラー={requiredCount}");
 
             if (errors.Any())
-                throw new Exception($"列マッピングエラー (必須列のみ):\n{string.Join("\n", errors)}");
+                throw new Exception($"列マッピングエラー :\n{string.Join("\n", errors)}");
         }
 
         /// <summary>
@@ -313,7 +309,9 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
             var sourceRawDict = new Dictionary<string, string>();
             var requiredFieldErrors = new List<string>();
 
-            foreach (var detail in importDetails.OrderBy(d => d.ColumnSeq))
+            foreach (var detail in importDetails
+                .Where(d => d.IsRequired)
+               .OrderBy(d => d.ColumnSeq))
             {
                 string? rawValue = null;
                 string? transformedValue = null;
@@ -351,11 +349,11 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
                 }
 
                 // フロー5: 必須チェック (is_required)
-                if (detail.IsRequired && string.IsNullOrWhiteSpace(transformedValue))
-                {
-                    string fieldName = detail.AttrCd ?? detail.TargetColumn ?? $"列{detail.ColumnSeq}";
-                    requiredFieldErrors.Add($"{fieldName} (列{detail.ColumnSeq})");
-                }
+                // if (detail.IsRequired && string.IsNullOrWhiteSpace(transformedValue))
+                // {
+                //     string fieldName = detail.AttrCd ?? detail.TargetColumn ?? $"列{detail.ColumnSeq}";
+                //     requiredFieldErrors.Add($"{fieldName} (列{detail.ColumnSeq})");
+                // }
 
                 // 元CSV値を source_raw として保持
                 string backupKey = isInjectedValue ? $"_injected_{detail.TargetColumn}" : headerName;
@@ -366,19 +364,19 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
 
                 // 固定フィールドへマッピング
                 if (!string.IsNullOrEmpty(detail.TargetColumn) &&
-                    (detail.TargetEntity == "PRODUCT_MST" || detail.TargetEntity == "PRODUCT"))
+                    (detail.ProjectionKind == "PRODUCT_MST" || detail.ProjectionKind == "PRODUCT"))
                 {
                     string propertyName = "Source" + ConvertToPascalCase(detail.TargetColumn);
                     mappingSuccess = SetTempProductProperty(tempProduct, propertyName, transformedValue);
                 }
 
                 // EAV ターゲット生成準備 (Step B-1: CSV 侧指定了 attr_cd 的列)
-                if (detail.TargetEntity == "EAV" && !string.IsNullOrEmpty(detail.AttrCd))
-                {
-                    // 支持多值分割 (例: "Red, Blue, Green" → 3条记录)
-                    CreateEavAttribute(batchId, tempProduct.TempRowId, detail, detail.ColumnSeq,
-                      headerName, transformedValue, isInjectedValue);
-                }
+                // 注释掉: 现在只处理 PRODUCT_MST,不处理 EAV
+                // if (detail.ProjectionKind == "EAV" && !string.IsNullOrEmpty(detail.AttrCd))
+                // {
+                //     CreateEavAttribute(batchId, tempProduct.TempRowId, detail, detail.ColumnSeq,
+                //                       headerName, transformedValue, isInjectedValue);
+                // }
 
                 // extras_json 用の詳細情報保存
                 extrasDict[$"col_{detail.ColumnSeq}"] = new
@@ -388,7 +386,7 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
                     raw_value = rawValue ?? "",
                     transformed_value = transformedValue ?? "",
                     target_column = detail.TargetColumn ?? "",
-                    target_entity = detail.TargetEntity ?? "",
+                    projection_kind = detail.ProjectionKind ?? "",
                     attr_cd = detail.AttrCd ?? "",
                     transform_expr = detail.TransformExpr ?? "",
                     is_required = detail.IsRequired,
@@ -417,15 +415,15 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
 
         /// <summary>
         /// フロー8: EAV ターゲット生成 (第2種：EAV属性)
-        /// - m_data_import_d.target_entity='EAV' の各行は 1セル=1属性
-        /// - source_raw は CSV値(トリム後)
-        /// - value_* フィールドは INGEST 段階では未設定（CLEANSE 段階で設定）
-        /// - data_type は未確定（CLEANSE 段階で m_attr_definition と比較して確定）
+        /// - m_data_import_d.projection_kind='EAV' の各行は 1セル=1属性
+        /// - source_raw は CSV値
+        /// - value_* フィールドは INGEST 段階では未設定
+        /// - data_type は未確定
         /// </summary>
         private void CreateEavAttribute(
             string batchId, Guid tempRowId, MDataImportD detail,
             int csvColumnIndex, string headerName, string? transformedValue, bool isInjectedValue)
-        {
+        {  
             var attrSeq = (short)(_productAttrs.Count(p =>
                 p.TempRowId == tempRowId && p.AttrCd == detail.AttrCd) + 1);
 
@@ -456,7 +454,7 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
                     stage = "INGEST",
                     from = isInjectedValue ? "INJECTED" : "CSV",
                     via = "eav_map",
-                    target_entity = "EAV",
+                    projection_kind = "EAV",
                     profile_id = detail.ProfileId,
                     column_seq = csvColumnIndex,
                     csv_header = headerName,
@@ -467,52 +465,6 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
 
             _productAttrs.Add(productAttr);
         }
-
-        /// <summary>
-        /// フロー8 : EAV ターゲット生成 - 支持多值分割
-        /// - 支持多值分割（例: "Red, Blue, Green" → attr_seq = 1, 2, 3）
-        /// - source_raw 保存完整的原始值
-        /// - value_* フィールドは INGEST 段階では未設定
-        /// </summary>
-        /*private void CreateEavAttributesWithSplit(
-            string batchId, Guid tempRowId, MDataImportD detail,
-            int csvColumnIndex, string headerName, string? transformedValue, bool isInjectedValue)
-        {
-            if (string.IsNullOrWhiteSpace(transformedValue))
-            {
-                // 空值情况：创建一条空记录
-                CreateSingleEavAttribute(batchId, tempRowId, detail, csvColumnIndex,
-                                       headerName, "", isInjectedValue, transformedValue ?? "");
-                return;
-            }
-
-            // 检查是否需要多值分割
-            var splitDelimiters = new[] { ',', ';', '、' };
-            var values = transformedValue.Split(splitDelimiters, StringSplitOptions.RemoveEmptyEntries)
-                                        .Select(v => v.Trim())
-                                        .Where(v => !string.IsNullOrEmpty(v))
-                                        .ToList();
-
-            if (values.Count == 0)
-            {
-                CreateSingleEavAttribute(batchId, tempRowId, detail, csvColumnIndex,
-                                       headerName, "", isInjectedValue, transformedValue);
-            }
-            else if (values.Count == 1)
-            {
-                CreateSingleEavAttribute(batchId, tempRowId, detail, csvColumnIndex,
-                                       headerName, values[0], isInjectedValue, transformedValue);
-            }
-            else
-            {
-                // 多值：生成多条记录
-                for (int i = 0; i < values.Count; i++)
-                {
-                    CreateSingleEavAttribute(batchId, tempRowId, detail, csvColumnIndex,
-                                           headerName, values[i], isInjectedValue, transformedValue, (short)(i + 1));
-                }
-            }
-        }*/
 
         /// <summary>
         /// 创建单条 EAV 属性记录
@@ -554,7 +506,7 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
                     stage = "INGEST",
                     from = isInjectedValue ? "INJECTED" : "CSV",
                     via = "eav_map",
-                    target_entity = "EAV",
+                    projection_kind = "EAV",
                     profile_id = detail.ProfileId,
                     column_seq = csvColumnIndex,
                     csv_header = headerName,
@@ -580,22 +532,255 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
         private async Task GenerateProductAttributesAsync(
             string batchId, string groupCompanyCd, List<MDataImportD> importDetails)
         {
-            // フロー7: m_fixed_to_attr_map の適用
+            // 清空之前添加的所有属性数据(包括 EAV 等),重新生成 PRODUCT_MST 的数据
+            _productAttrs.Clear();
+
+            // 获取所有必要的映射表数据
             var attrMaps = await _dataService.GetFixedToAttrMapsAsync(groupCompanyCd, "PRODUCT");
+            var attrDefinitions = await _dataService.GetAttrDefinitionsAsync();
+
+            // 从 m_data_import_d 中过滤出 projection_kind == "PRODUCT_MST" 的记录,保持原始顺序
+            var productMstDetails = importDetails
+                .Where(d => d.ProjectionKind == "PRODUCT_MST")
+                .OrderBy(d => d.ColumnSeq)  // 按 column_seq 排序,确保顺序
+                .ToList();
+
+            Console.WriteLine($"处理 PRODUCT_MST 属性: 共 {productMstDetails.Count} 个配置");
+
+            // 打印匹配信息
+            Console.WriteLine($"\n=== 属性映射统计 ===");
+            Console.WriteLine($"m_fixed_to_attr_map 总数: {attrMaps.Count}");
+            foreach (var map in attrMaps)
+            {
+                Console.WriteLine($"  - attr_cd={map.AttrCd}, source_id_column={map.SourceIdColumn}, source_label_column={map.SourceLabelColumn}, value_role={map.ValueRole}");
+            }
+            Console.WriteLine($"PRODUCT_MST 配置总数: {productMstDetails.Count}");
+            foreach (var detail in productMstDetails)
+            {
+                var hasMap = attrMaps.Any(m => m.AttrCd == detail.AttrCd);
+                Console.WriteLine($"  - column_seq={detail.ColumnSeq}, attr_cd={detail.AttrCd}, target_column={detail.TargetColumn}, has_fixed_map={hasMap}");
+            }
+            Console.WriteLine($"===================\n");
 
             foreach (var tempProduct in _tempProducts)
             {
-                // フロー7: 固定フィールド → attr_cd 投影
-                // 重要: m_fixed_to_attr_map を基準に反復（重複生成を防ぐ）
-                foreach (var attrMap in attrMaps)
+                // 用于记录已经处理过的 attr_cd (仅针对 m_fixed_to_attr_map 路径)
+                var processedFixedMapAttrCds = new HashSet<string>();
+
+                // 按 m_data_import_d 的顺序逐条处理,不去重
+                foreach (var detail in productMstDetails)
                 {
-                    ProjectFixedFieldToAttribute(batchId, tempProduct, attrMap);
+                    // 跳过空的 attr_cd
+                    if (string.IsNullOrEmpty(detail.AttrCd))
+                    {
+                        Console.WriteLine($"[跳过] column_seq={detail.ColumnSeq}, attr_cd 为空");
+                        continue;
+                    }
+
+                    // 尝试从 m_fixed_to_attr_map 中查找匹配
+                    var attrMap = attrMaps.FirstOrDefault(m => m.AttrCd == detail.AttrCd);
+
+                    if (attrMap != null)
+                    {
+                        // 情况1: 在 m_fixed_to_attr_map 中找到匹配
+                        // 检查是否已经处理过这个 attr_cd
+                        if (processedFixedMapAttrCds.Contains(detail.AttrCd))
+                        {
+                            Console.WriteLine($"[跳过重复] attr_cd={detail.AttrCd} 已通过 m_fixed_to_attr_map 处理过");
+                            continue;
+                        }
+
+                        Console.WriteLine($"[匹配路径1] attr_cd={detail.AttrCd} 使用 m_fixed_to_attr_map");
+                        ProcessAttributeWithFixedMap(batchId, tempProduct, detail, attrMap, attrDefinitions);
+
+                        // 标记为已处理
+                        processedFixedMapAttrCds.Add(detail.AttrCd);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[匹配路径2] attr_cd={detail.AttrCd} 使用 m_attr_definition");
+                        // 情况2: 没有找到 fixed_map,直接使用 m_attr_definition
+                        ProcessAttributeWithoutFixedMap(batchId, tempProduct, detail, attrDefinitions);
+                    }
                 }
             }
 
             // データベース保存
             await _productRepository.SaveProductAttributesAsync(_productAttrs);
             Console.WriteLine($"cl_product_attr保存完了: {_productAttrs.Count} レコード");
+        }
+
+        /// <summary>
+        /// 情况1: 使用 m_fixed_to_attr_map 处理属性
+        /// - 根据 value_role 判断取值方式 (ID_AND_LABEL 或 ID_ONLY)
+        /// - 从 m_attr_definition 获取 data_type
+        /// </summary>
+        private void ProcessAttributeWithFixedMap(
+            string batchId, TempProductParsed tempProduct, MDataImportD detail,
+            MFixedToAttrMap attrMap, List<MAttrDefinition> attrDefinitions)
+        {
+            if (detail.AttrCd == "SALES_RANK")
+            {
+                Console.WriteLine($"SALES_RANK 的 ValueRole 是: {attrMap.ValueRole}");  // 输出 ID_AND_LABEL 或 ID_ONLY
+            }
+            short attrSeqForRow = (short)(_productAttrs.Count(p =>
+                p.TempRowId == tempProduct.TempRowId && p.AttrCd == detail.AttrCd) + 1);
+
+            // 1. 根据 value_role 获取 source_id 和 source_label 的实际值
+            string? sourceIdValue = null;
+            string? sourceLabelValue = null;
+
+            if (attrMap.ValueRole == "ID_AND_LABEL")
+            {
+                // ID_AND_LABEL: 同时取 source_id_column 和 source_label_column 的值
+                // source_id_column 中存储的是字段名 (例: "source_brand_id")
+                // 直接转换为 PascalCase (例: "SourceBrandId") 去 temp_product_parsed 中查找
+                if (!string.IsNullOrEmpty(attrMap.SourceIdColumn))
+                {
+                    string idFieldName = ConvertToPascalCase(attrMap.SourceIdColumn);  // source_brand_id -> SourceBrandId
+                    sourceIdValue = GetTempProductProperty(tempProduct, idFieldName);
+                    Console.WriteLine($"    [读取ID] source_id_column={attrMap.SourceIdColumn} -> 属性名={idFieldName} -> 值={sourceIdValue ?? "(null)"}");
+                }
+
+                if (!string.IsNullOrEmpty(attrMap.SourceLabelColumn))
+                {
+                    string labelFieldName = ConvertToPascalCase(attrMap.SourceLabelColumn);  // source_brand_nm -> SourceBrandNm
+                    sourceLabelValue = GetTempProductProperty(tempProduct, labelFieldName);
+                    Console.WriteLine($"    [读取Label] source_label_column={attrMap.SourceLabelColumn} -> 属性名={labelFieldName} -> 值={sourceLabelValue ?? "(null)"}");
+                }
+            }
+            else if (attrMap.ValueRole == "ID_ONLY")
+            {
+                // ID_ONLY: 只取 source_id_column 的值
+                if (!string.IsNullOrEmpty(attrMap.SourceIdColumn))
+                {
+                    string idFieldName = ConvertToPascalCase(attrMap.SourceIdColumn);
+                    sourceIdValue = GetTempProductProperty(tempProduct, idFieldName);
+                    Console.WriteLine($"    [读取ID_ONLY] source_id_column={attrMap.SourceIdColumn} -> 属性名={idFieldName} -> 值={sourceIdValue ?? "(null)"}");
+                }
+                sourceLabelValue = "";  // ID_ONLY 模式下 source_label 为空
+            }
+
+            // 2. 构建 source_raw 的 JSON
+            // 注意: attrMap.SourceIdColumn 已经包含 source_ 前缀 (例: "source_brand_id")
+            // 直接使用,不需要再添加 source_ 前缀
+            // 例: {"source_brand_id":"4952","source_brand_nm":"ROLEX"}
+            var sourceRawDict = new Dictionary<string, string>();
+
+            if (!string.IsNullOrEmpty(attrMap.SourceIdColumn) && !string.IsNullOrEmpty(sourceIdValue))
+            {
+                sourceRawDict[attrMap.SourceIdColumn] = sourceIdValue;  // 直接使用 source_brand_id
+            }
+
+            if (attrMap.ValueRole == "ID_AND_LABEL" &&
+                !string.IsNullOrEmpty(attrMap.SourceLabelColumn) &&
+                !string.IsNullOrEmpty(sourceLabelValue))
+            {
+                sourceRawDict[attrMap.SourceLabelColumn] = sourceLabelValue;  // 直接使用 source_brand_nm
+            }
+
+            string sourceRaw = JsonSerializer.Serialize(sourceRawDict, new JsonSerializerOptions { WriteIndented = false });
+
+            // 3. 用 attr_cd 去 m_attr_definition 表查找 data_type
+            string? dataType = null;
+            var attrDef = attrDefinitions.FirstOrDefault(ad => ad.AttrCd == detail.AttrCd);
+            if (attrDef != null)
+            {
+                dataType = attrDef.DataType;
+            }
+
+            // 4. 检查是否有值
+            bool hasValue = !string.IsNullOrEmpty(sourceIdValue);
+
+            // 5. 创建属性记录并插入
+            if (hasValue)
+            {
+                var productAttr = new ClProductAttr
+                {
+                    BatchId = batchId,
+                    TempRowId = tempProduct.TempRowId,
+                    AttrCd = detail.AttrCd,
+                    AttrSeq = attrSeqForRow,
+                    SourceId = sourceIdValue ?? "",           // 例: "4952"
+                    SourceLabel = sourceLabelValue ?? "",     // 例: "ROLEX"
+                    SourceRaw = sourceRaw,                    // 例: {"source_brand_id":"4952","source_brand_nm":"ROLEX"}
+                    DataType = dataType                       // 从 m_attr_definition 获取
+                };
+
+                _productAttrs.Add(productAttr);
+                Console.WriteLine($"[FixedMap] 已添加属性: attr_cd={detail.AttrCd}, source_id={sourceIdValue}, source_label={sourceLabelValue}");
+            }
+            else
+            {
+                Console.WriteLine($"[FixedMap] 跳过空值属性: attr_cd={detail.AttrCd}, source_id_column={attrMap.SourceIdColumn}, value_role={attrMap.ValueRole}");
+            }
+        }
+
+        /// <summary>
+        /// 情况2: 不使用 m_fixed_to_attr_map,直接使用 m_attr_definition
+        /// - 从 m_attr_definition 获取 data_type (如果找不到也可以为空)
+        /// - 从 temp_product_parsed 中根据 target_column 获取值
+        /// </summary>
+        private void ProcessAttributeWithoutFixedMap(
+            string batchId, TempProductParsed tempProduct, MDataImportD detail,
+            List<MAttrDefinition> attrDefinitions)
+        {
+            short attrSeqForRow = (short)(_productAttrs.Count(p =>
+                p.TempRowId == tempProduct.TempRowId && p.AttrCd == detail.AttrCd) + 1);
+
+            // 1. 用 attr_cd 去 m_attr_definition 表查找 data_type (可以为空)
+            string? dataType = null;
+            var attrDef = attrDefinitions.FirstOrDefault(ad => ad.AttrCd == detail.AttrCd);
+            if (attrDef != null)
+            {
+                dataType = attrDef.DataType;
+            }
+
+            // 2. 从 temp_product_parsed 中根据 target_column 获取值
+            // 例: target_column = "group_company_cd" → 从 SourceGroupCompanyCd 获取
+            string? value = null;
+            if (!string.IsNullOrEmpty(detail.TargetColumn))
+            {
+                string fieldName = "Source" + ConvertToPascalCase(detail.TargetColumn);
+                value = GetTempProductProperty(tempProduct, fieldName);
+            }
+
+            // 3. 构建 source_raw (使用 source_ 前缀的字段名)
+            // 例: {"source_group_company_cd":"KM"}
+            var sourceRawDict = new Dictionary<string, string>();
+            if (!string.IsNullOrEmpty(detail.TargetColumn) && !string.IsNullOrEmpty(value))
+            {
+                string sourceKey = "source_" + detail.TargetColumn;
+                sourceRawDict[sourceKey] = value;
+            }
+
+            string sourceRaw = JsonSerializer.Serialize(sourceRawDict, new JsonSerializerOptions { WriteIndented = false });
+
+            // 4. 检查是否有值
+            bool hasValue = !string.IsNullOrEmpty(value);
+
+            // 5. 创建属性记录并插入
+            if (hasValue)
+            {
+                var productAttr = new ClProductAttr
+                {
+                    BatchId = batchId,
+                    TempRowId = tempProduct.TempRowId,
+                    AttrCd = detail.AttrCd,
+                    AttrSeq = attrSeqForRow,
+                    SourceId = value ?? "",                   // 例: "KM"
+                    SourceLabel = "",                         // 情况2没有 label,为空
+                    SourceRaw = sourceRaw,                    // 例: {"source_group_company_cd":"KM"}
+                    DataType = dataType                       // 从 m_attr_definition 获取 (可以为空)
+                };
+
+                _productAttrs.Add(productAttr);
+                Console.WriteLine($"[NoFixedMap] 已添加属性: attr_cd={detail.AttrCd}, source_id={value}, target_column={detail.TargetColumn}");
+            }
+            else
+            {
+                Console.WriteLine($"[NoFixedMap] 跳过空值属性: attr_cd={detail.AttrCd}, target_column={detail.TargetColumn}");
+            }
         }
 
         /// <summary>
@@ -677,7 +862,7 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
                         stage = "INGEST",
                         from = "PRODUCT_MST",
                         via = "fixed_map",
-                        target_entity = "PRODUCT_MST",
+                        projection_kind = "PRODUCT_MST",
                         map_id = attrMap.MapId,
                         source_id_column = attrMap.SourceIdColumn,
                         source_label_column = attrMap.SourceLabelColumn
@@ -762,10 +947,11 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
         private async Task SaveToTempTablesAsync()
         {
             await _productRepository.SaveTempProductsAsync(_tempProducts);
-            await _productRepository.SaveProductAttributesAsync(_productAttrs);
+            // 注意: _productAttrs 不在这里保存,因为需要在 GenerateProductAttributesAsync 中重新生成
+            // await _productRepository.SaveProductAttributesAsync(_productAttrs);
             await _productRepository.SaveRecordErrorsAsync(_recordErrors);
 
-            Console.WriteLine($"temp保存完了: 商品={_tempProducts.Count}, 属性={_productAttrs.Count}, エラー={_recordErrors.Count}");
+            Console.WriteLine($"temp保存完了: 商品={_tempProducts.Count}, エラー={_recordErrors.Count}");
         }
 
         #endregion
@@ -787,7 +973,7 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
                 ErrorDetail = $"データ行 {dataRowNumber} (物理行 {currentPhysicalLine}): {errorMessage}",
                 RawFragment = string.Join(",", record?.Take(5) ?? Array.Empty<string>())
             };
-
+            Console.WriteLine($"エラーレコード: {error.ErrorDetail}");
             _recordErrors.Add(error);
         }
 

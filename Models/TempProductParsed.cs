@@ -57,9 +57,9 @@ namespace ProductDataIngestion.Models
         
         // 排名信息
         public string? SourcePurchaseRank { get; set; }
-        public string? SourcePurchaseRankName { get; set; }
+        public string? SourcePurchaseRankNm { get; set; }
         public string? SourceSalesRank { get; set; }
-        public string? SourceSalesRankName { get; set; }
+        public string? SourceSalesRankNm { get; set; }
         
         // 渠道信息
         public string? SourceSalesChannelNm { get; set; }

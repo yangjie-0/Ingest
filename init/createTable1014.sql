@@ -92,7 +92,7 @@ COMMENT ON COLUMN m_fixed_to_attr_map.upd_at IS '更新日時';
 CREATE TABLE m_data_import_d (
     profile_id BIGINT NOT NULL,
     column_seq INT NOT NULL,
-    target_entity TEXT NOT NULL,
+    projection_kind TEXT NOT NULL,
     attr_cd TEXT,
     target_column TEXT,
     cast_type TEXT,
@@ -107,7 +107,7 @@ CREATE TABLE m_data_import_d (
 COMMENT ON TABLE m_data_import_d IS 'ファイル取込ルール詳細マスタ: ファイル取込ルール詳細';
 COMMENT ON COLUMN m_data_import_d.profile_id IS 'プロファイルID';
 COMMENT ON COLUMN m_data_import_d.column_seq IS '列番号: CSV上の列インデックス1始まり';
-COMMENT ON COLUMN m_data_import_d.target_entity IS 'ターゲット: PRODUCT:商品、EVENT:イベント、PRODUCT_EAV:商品EAV　ルールの行ごとの上書き';
+COMMENT ON COLUMN m_data_import_d.projection_kind IS 'ターゲット: PRODUCT:商品、EVENT:イベント、PRODUCT_EAV:商品EAV　ルールの行ごとの上書き';
 COMMENT ON COLUMN m_data_import_d.attr_cd IS '項目コード';
 COMMENT ON COLUMN m_data_import_d.target_column IS '固定カラム: 直差し先を明示したい場合（固定カラム）';
 COMMENT ON COLUMN m_data_import_d.cast_type IS '型変換タイプ: TEXT:テキスト、NUM:数値、DATE:日付、BOOL:真偽';
@@ -160,9 +160,9 @@ CREATE TABLE temp_product_parsed (
     source_sales_price_incl_tax TEXT,
     source_sales_tax_rate TEXT,
     source_purchase_rank TEXT,
-    source_purchase_rank_name TEXT,
+    source_purchase_rank_nm TEXT,
     source_sales_rank TEXT,
-    source_sales_rank_name TEXT,
+    source_sales_rank_nm TEXT,
     source_sales_channel_nm TEXT,
     source_sales_channel_region TEXT,
     source_sales_channel_method TEXT,
@@ -224,9 +224,9 @@ COMMENT ON COLUMN temp_product_parsed.source_sales_price_excl_tax IS '連携元�
 COMMENT ON COLUMN temp_product_parsed.source_sales_price_incl_tax IS '連携元売上価格(税込み)';
 COMMENT ON COLUMN temp_product_parsed.source_sales_tax_rate IS '連携元税率';
 COMMENT ON COLUMN temp_product_parsed.source_purchase_rank IS '連携元仕入ランク';
-COMMENT ON COLUMN temp_product_parsed.source_purchase_rank_name IS '連携元仕入ランク名';
+COMMENT ON COLUMN temp_product_parsed.source_purchase_rank_nm IS '連携元仕入ランク名';
 COMMENT ON COLUMN temp_product_parsed.source_sales_rank IS '連携元販売ランク';
-COMMENT ON COLUMN temp_product_parsed.source_sales_rank_name IS '連携元販売ランク名';
+COMMENT ON COLUMN temp_product_parsed.source_sales_rank_nm IS '連携元販売ランク名';
 COMMENT ON COLUMN temp_product_parsed.source_sales_channel_nm IS '連携元販売チャネル名';
 COMMENT ON COLUMN temp_product_parsed.source_sales_channel_region IS '連携元販売チャネル地域';
 COMMENT ON COLUMN temp_product_parsed.source_sales_channel_method IS '連携元販売チャネル方法';

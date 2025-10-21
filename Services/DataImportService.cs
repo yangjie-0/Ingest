@@ -35,7 +35,7 @@ namespace ProductDataIngestion.Services
         Task<List<MFixedToAttrMap>> GetFixedToAttrMapsAsync(string groupCompanyCd, string dataKind);
 
         // 异步获取属性定义。
-        Task<List<MAttrDefinition>> GetAttrDefinitionsAsync(string groupCompanyCd);
+        Task<List<MAttrDefinition>> GetAttrDefinitionsAsync();
 
         // 异步读取CSV文件为类型化记录列表。
         Task<List<T>> ReadCsvWithSettingsAsync<T>(string filePath, MDataImportSetting setting) where T : class, new();
@@ -104,7 +104,7 @@ namespace ProductDataIngestion.Services
                 SELECT 
                     profile_id as ProfileId,
                     column_seq as ColumnSeq,
-                    target_entity as TargetEntity,
+                    projection_kind as ProjectionKind,
                     attr_cd as AttrCd,
                     target_column as TargetColumn,
                     cast_type as CastType,
@@ -138,24 +138,32 @@ namespace ProductDataIngestion.Services
             // 获取属性定义的SQL查询。
             public const string GetAttrDefinitions = @"
                 SELECT
-                    attr_def_id as AttrDefId,
-                    group_company_cd as GroupCompanyCd,
+                    attr_id as AttrId,
                     attr_cd as AttrCd,
                     attr_nm as AttrNm,
+                    attr_sort_no as AttrSortNo,
+                    g_category_cd as GCategoryCd,
                     data_type as DataType,
-                    default_value as DefaultValue,
-                    is_required as IsRequired,
-                    is_multi_value as IsMultiValue,
-                    validation_rule as ValidationRule,
-                    attr_remarks as AttrRemarks,
+                    g_list_group_cd as GListGroupCd,
+                    select_type as SelectType,
+                    is_golden_attr as IsGoldenAttr,
+                    cleanse_phase as CleansePhase,
+                    required_context_keys as RequiredContextKeys,
+                    target_table as TargetTable,
+                    target_column as TargetColumn,
+                    product_unit_cd as ProductUnitCd,
+                    credit_active_flag as CreditActiveFlag,
+                    usage as Usage,
+                    table_type_cd as TableTypeCd,
+                    is_golden_product as IsGoldenProduct,
+                    is_golden_attr as IsGoldenAttrEav,
                     is_active as IsActive,
-                    display_order as DisplayOrder,
+                    attr_remarks as AttrRemarks,
                     cre_at as CreAt,
                     upd_at as UpdAt
                 FROM m_attr_definition
-                WHERE group_company_cd = @GroupCompanyCd
-                    AND is_active = true
-                ORDER BY display_order";
+                WHERE is_active = true
+                ORDER BY attr_sort_no NULLS LAST, attr_id";
         }
 
         // 异步从数据库获取导入设置。
@@ -195,12 +203,11 @@ namespace ProductDataIngestion.Services
         }
 
         // 异步从数据库获取属性定义列表。
-        public async Task<List<MAttrDefinition>> GetAttrDefinitionsAsync(string groupCompanyCd)
+        public async Task<List<MAttrDefinition>> GetAttrDefinitionsAsync()
         {
             using var connection = new NpgsqlConnection(_connectionString);
             return (await connection.QueryAsync<MAttrDefinition>(
-                SqlQueries.GetAttrDefinitions,
-                new { GroupCompanyCd = groupCompanyCd })).ToList();
+                SqlQueries.GetAttrDefinitions)).ToList();
         }
 
         // CSV相关方法，保留原有接口名，优化为全异步流式处理

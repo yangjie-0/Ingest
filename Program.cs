@@ -57,7 +57,7 @@ class Program
                     for (int i = 0; i < take; i++)
                     {
                         var d = details[i];
-                        Console.WriteLine($"{i + 1}. ColumnSeq={d.ColumnSeq}, TargetEntity={d.TargetEntity}, TargetColumn={d.TargetColumn}, AttrCd={d.AttrCd}, IsRequired={d.IsRequired}, TransformExpr={d.TransformExpr}");
+                        Console.WriteLine($"{i + 1}. ColumnSeq={d.ColumnSeq}, ProjectionKind={d.ProjectionKind}, TargetColumn={d.TargetColumn}, AttrCd={d.AttrCd}, IsRequired={d.IsRequired}, TransformExpr={d.TransformExpr}");
                     }
                     if (details.Count > take)
                         Console.WriteLine($"... 还有 {details.Count - take} 条映射未显示");
@@ -76,10 +76,10 @@ class Program
             var batchRepository = new ProductDataIngestion.Repositories.BatchRepository(connectionString);
             var productRepository = new ProductDataIngestion.Repositories.ProductRepository(connectionString);
 
-            // 取込サービスのインスタンス作成 
+            // 取込サービスのインスタンス作成 (Repository 経由)
             var ingestService = new IngestService(connectionString, batchRepository, productRepository);
 
-            // CSV取込処理実行
+            // CSV取込処理実行 (targetEntityを渡す)
             string batchId = await ingestService.ProcessCsvFileAsync(csvFilePath, groupCompanyCd, targetEntity);
             
             // 結果表示

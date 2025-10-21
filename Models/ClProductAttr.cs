@@ -24,6 +24,7 @@ namespace ProductDataIngestion.Models
         public string QualityDetailJson { get; set; } = "{}";
         public string ProvenanceJson { get; set; } = "{}";
         public string RuleVersion { get; set; } = string.Empty;
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? CreAt { get; set; }  // 由数据库 CURRENT_TIMESTAMP 自动设置
+        public DateTime? UpdAt { get; set; }  // 由数据库 CURRENT_TIMESTAMP 自动设置
     }
 }

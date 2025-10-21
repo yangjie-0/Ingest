@@ -43,8 +43,8 @@ namespace ProductDataIngestion.Repositories
                     source_display_price_excl_tax, source_display_price_incl_tax,
                     source_display_tax_rate, source_sales_price_excl_tax,
                     source_sales_price_incl_tax, source_sales_tax_rate,
-                    source_purchase_rank, source_purchase_rank_name,
-                    source_sales_rank, source_sales_rank_name,
+                    source_purchase_rank, source_purchase_rank_nm,
+                    source_sales_rank, source_sales_rank_nm,
                     source_sales_channel_nm, source_sales_channel_region,
                     source_sales_channel_method, source_sales_channel_target,
                     source_purchase_channel_nm, source_purchase_channel_region,
@@ -72,8 +72,8 @@ namespace ProductDataIngestion.Repositories
                     @SourceDisplayPriceExclTax, @SourceDisplayPriceInclTax,
                     @SourceDisplayTaxRate, @SourceSalesPriceExclTax,
                     @SourceSalesPriceInclTax, @SourceSalesTaxRate,
-                    @SourcePurchaseRank, @SourcePurchaseRankName,
-                    @SourceSalesRank, @SourceSalesRankName,
+                    @SourcePurchaseRank, @SourcePurchaseRankNm,
+                    @SourceSalesRank, @SourceSalesRankNm,
                     @SourceSalesChannelNm, @SourceSalesChannelRegion,
                     @SourceSalesChannelMethod, @SourceSalesChannelTarget,
                     @SourcePurchaseChannelNm, @SourcePurchaseChannelRegion,
@@ -97,16 +97,10 @@ namespace ProductDataIngestion.Repositories
             var sql = @"
                 INSERT INTO cl_product_attr (
                     batch_id, temp_row_id, attr_cd, attr_seq,
-                    source_id, source_label, source_raw, value_text,
-                    value_num, value_date, value_cd, g_list_item_id,
-                    data_type, quality_flag, quality_detail_json, provenance_json,
-                    rule_version, cre_at, upd_at
+                    source_id, source_label, source_raw, data_type
                 ) VALUES (
                     @BatchId, @TempRowId, @AttrCd, @AttrSeq,
-                    @SourceId, @SourceLabel, @SourceRaw, @ValueText,
-                    @ValueNum, @ValueDate, @ValueCd, @GListItemId,
-                    @DataType, @QualityFlag, @QualityDetailJson::jsonb, @ProvenanceJson::jsonb,
-                    @RuleVersion, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    @SourceId, @SourceLabel, @SourceRaw, @DataType
                 ) ON CONFLICT (batch_id, temp_row_id, attr_cd, attr_seq) DO NOTHING";
 
             await connection.ExecuteAsync(sql, attributes);

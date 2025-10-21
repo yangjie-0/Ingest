@@ -6,18 +6,27 @@ namespace ProductDataIngestion.Models
     /// </summary>
     public class MAttrDefinition
     {
-        public long AttrDefId { get; set; }
-        public string GroupCompanyCd { get; set; } = string.Empty;
+        public long AttrId { get; set; }
         public string AttrCd { get; set; } = string.Empty;
         public string AttrNm { get; set; } = string.Empty;
+        public short? AttrSortNo { get; set; }
+        public string? GCategoryCd { get; set; }
         public string DataType { get; set; } = string.Empty; // TEXT, NUM, DATE, LIST, BOOL, REF
-        public string? DefaultValue { get; set; }
-        public bool IsRequired { get; set; }
-        public bool IsMultiValue { get; set; }
-        public string? ValidationRule { get; set; }
-        public string? AttrRemarks { get; set; }
+        public string? GListGroupCd { get; set; }
+        public string? SelectType { get; set; } // SINGLE, MULTI
+        public bool? IsGoldenAttr { get; set; }
+        public short? CleansePhase { get; set; }
+        public string[]? RequiredContextKeys { get; set; }
+        public string? TargetTable { get; set; }
+        public string? TargetColumn { get; set; }
+        public string? ProductUnitCd { get; set; } // cm, mm, ct, g
+        public bool? CreditActiveFlag { get; set; }
+        public string? Usage { get; set; } // PRODUCT, CATALOG, NULL
+        public string? TableTypeCd { get; set; } // MST, EAV
+        public bool IsGoldenProduct { get; set; }
+        public bool IsGoldenAttrEav { get; set; }
         public bool IsActive { get; set; }
-        public int DisplayOrder { get; set; }
+        public string? AttrRemarks { get; set; }
         public DateTime CreAt { get; set; }
         public DateTime UpdAt { get; set; }
     }

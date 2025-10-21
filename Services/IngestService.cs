@@ -55,7 +55,7 @@ namespace ProductDataIngestion.Services
 
             try
             {
-                // フロー2: ファイル取込ルールの取得
+                // フロー2: ファイル取込ルール取得
                 var (importSetting, importDetails) = await FetchImportRulesAsync(groupCompanyCd, targetEntity);
 
                 // フロー3: CSV読み込み前のI/O設定
@@ -66,7 +66,7 @@ namespace ProductDataIngestion.Services
                                                              headerRowIndex, importDetails, config);
 
                 // フロー7-9: 固定→EAV投影、EAV生成、メタ付与
-                await GenerateProductAttributesAsync(batchId, groupCompanyCd, importDetails);
+                await GenerateProductAttributesAsync(batchId, groupCompanyCd, importDetails,targetEntity);
 
                 // フロー10: バッチ統計更新
                 await UpdateBatchStatisticsAsync(batchId, result);
@@ -157,10 +157,10 @@ namespace ProductDataIngestion.Services
             var config = new CsvConfiguration(CultureInfo.InvariantCulture)
             {
                 HasHeaderRecord = true, // ヘッダー行を自動的に読み込む
-                Delimiter = importSetting.Delimiter ,
+                Delimiter = importSetting.Delimiter ?? ",",// デフォルトはカンマ区切り
                 BadDataFound = context => { },
                 MissingFieldFound = null,
-                Encoding = GetEncodingFromCharacterCode(importSetting.CharacterCd )
+                Encoding = GetEncodingFromCharacterCode(importSetting.CharacterCd ?? "UTF-8")// デフォルトは UTF-8
             };
 
             // header_row_index を返して、後で使用する
@@ -171,79 +171,79 @@ namespace ProductDataIngestion.Services
 
         #region フロー4-6: CSV読込 → 必須チェック → temp保存
 
-/// <summary>
-/// フロー4-6: CSV読込 → 必須チェック → temp保存
-/// - header_row_index で指定された行までスキップし、その行をヘッダーとして読み込む
-/// - その後のデータ行を処理 (変換はConfigで既に設定済み)
-/// - column_seq = 0: 公司コード注入
-/// - column_seq > 0: CSV列番号 (そのままCSV配列インデックスとして使用)
-/// </summary>
-private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTempAsync(
-    string filePath, string batchId, string groupCompanyCd,
-    int headerRowIndex, List<MDataImportD> importDetails, CsvConfiguration config)
-{
-    int readCount = 0, okCount = 0, ngCount = 0;
-    using var reader = new StreamReader(filePath, config.Encoding ?? Encoding.UTF8);
-    using var csv = new CsvReader(reader, config);
-
-    // フロー4: 表頭行までスキップ
-    for (int i = 0; i < headerRowIndex - 1; i++)
-    {
-        if (!await csv.ReadAsync())
-            throw new Exception($"ヘッダー行 {headerRowIndex} まで到達できません");
-    }
-
-    // ヘッダー行を読み込む
-    if (!await csv.ReadAsync())
-        throw new Exception("ヘッダー行が読み込めません");
-
-    csv.ReadHeader(); // 明确读取表头行
-    var headers = csv.HeaderRecord;
-    if (headers == null || headers.Length == 0)
-        throw new Exception("ヘッダー行が空です");
-
-    Console.WriteLine($"ヘッダー取得完了: {headers.Length} 列");
-
-    // 列マッピング検証
-    ValidateColumnMappings(importDetails, headers);
-
-    // データ行処理開始
-    long dataRowNumber = 0;
-    int currentPhysicalLine = headerRowIndex;
-
-    while (await csv.ReadAsync())
-    {
-        currentPhysicalLine++;
-        dataRowNumber++;
-        readCount++;
-
-        var record = csv.Parser.Record;
-        if (record == null || record.Length == 0)
+        /// <summary>
+        /// フロー4-6: CSV読込 → 必須チェック → temp保存
+        /// - header_row_index で指定された行までスキップし、その行をヘッダーとして読み込む
+        /// - その後のデータ行を処理 (変換はConfigで既に設定済み)
+        /// - column_seq = 0: 公司コード注入
+        /// - column_seq > 0: CSV列番号 (そのままCSV配列インデックスとして使用)
+        /// </summary>
+        private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTempAsync(
+            string filePath, string batchId, string groupCompanyCd,
+            int headerRowIndex, List<MDataImportD> importDetails, CsvConfiguration config)
         {
-            RecordError(batchId, dataRowNumber, currentPhysicalLine, "空のレコード", record);
-            ngCount++;
-            continue;
-        }
+            int readCount = 0, okCount = 0, ngCount = 0;
+            using var reader = new StreamReader(filePath, config.Encoding ?? Encoding.UTF8);
+            using var csv = new CsvReader(reader, config);
 
-        try
-        {
-            // CSV行をtempProductにマッピング
-            MapCsvRowToTempProduct(batchId, groupCompanyCd, dataRowNumber, currentPhysicalLine,
-                                   record, headers, importDetails);
-            okCount++;
-        }
-        catch (Exception ex)
-        {
-            RecordError(batchId, dataRowNumber, currentPhysicalLine, ex.Message, record);
-            ngCount++;
-        }
-    }
+            // フロー4: ヘッダー行までスキップ
+            for (int i = 0; i < headerRowIndex - 1; i++)
+            {
+                if (!await csv.ReadAsync())
+                    throw new Exception($"ヘッダー行 {headerRowIndex} まで到達できません");
+            }
 
-    // データベース保存 (フロー6: temp への保存)
-    await SaveToTempTablesAsync();
+            // ヘッダー行を読み込む
+            if (!await csv.ReadAsync())
+                throw new Exception("ヘッダー行が読み込めません");
 
-    return (readCount, okCount, ngCount);
-}
+            csv.ReadHeader();
+            var headers = csv.HeaderRecord;
+            if (headers == null || headers.Length == 0)
+                throw new Exception("ヘッダー行が空です");
+
+            Console.WriteLine($"ヘッダー取得完了: {headers.Length} 列");
+
+            // 列マッピング検証
+            ValidateColumnMappings(importDetails, headers);
+
+            // データ行処理開始
+            long dataRowNumber = 0;
+            int currentPhysicalLine = headerRowIndex;
+
+            while (await csv.ReadAsync())
+            {
+                currentPhysicalLine++;
+                dataRowNumber++;
+                readCount++;
+
+                var record = csv.Parser.Record;
+                if (record == null || record.Length == 0)
+                {
+                    RecordError(batchId, dataRowNumber, currentPhysicalLine, "空のレコード", record);
+                    ngCount++;
+                    continue;
+                }
+
+                try
+                {
+                    // CSV行をtempProductにマッピング
+                    MapCsvRowToTempProduct(batchId, groupCompanyCd, dataRowNumber, currentPhysicalLine,
+                                           record, headers, importDetails);
+                    okCount++;
+                }
+                catch (Exception ex)
+                {
+                    RecordError(batchId, dataRowNumber, currentPhysicalLine, ex.Message, record);
+                    ngCount++;
+                }
+            }
+
+            // データベース保存 (フロー6: temp への保存)
+            await SaveToTempTablesAsync();
+
+            return (readCount, okCount, ngCount);
+        }
 
         /// <summary>
         /// 列マッピング検証
@@ -257,7 +257,7 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
             var requiredCount = 0;
 
             foreach (var detail in importDetails
-                .Where(d => d.IsRequired)   
+                .Where(d => d.IsRequired)
                 .OrderBy(d => d.ColumnSeq))
             {
                 // column_seq = 0 は公司コード注入なのでスキップ
@@ -340,7 +340,7 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
 
                     rawValue = record[csvIndex];
                     headerName = headers[csvIndex];
-                    // transform_expr 適用
+                    // transform_expr 適用、スペース除去
                     transformedValue = ApplyTransformExpression(rawValue, detail.TransformExpr ?? "");
                 }
                 else
@@ -362,7 +362,7 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
                 // データ格納 (固定フィールド or EAV準備)
                 bool? mappingSuccess = null;
 
-                // 固定フィールドへマッピング
+                // 固定フィールドへマッピング TODO appsettings.json
                 if (!string.IsNullOrEmpty(detail.TargetColumn) &&
                     (detail.ProjectionKind == "PRODUCT_MST" || detail.ProjectionKind == "PRODUCT"))
                 {
@@ -413,112 +413,6 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
             _tempProducts.Add(tempProduct);
         }
 
-        /// <summary>
-        /// フロー8: EAV ターゲット生成 (第2種：EAV属性)
-        /// - m_data_import_d.projection_kind='EAV' の各行は 1セル=1属性
-        /// - source_raw は CSV値
-        /// - value_* フィールドは INGEST 段階では未設定
-        /// - data_type は未確定
-        /// </summary>
-        private void CreateEavAttribute(
-            string batchId, Guid tempRowId, MDataImportD detail,
-            int csvColumnIndex, string headerName, string? transformedValue, bool isInjectedValue)
-        {  
-            var attrSeq = (short)(_productAttrs.Count(p =>
-                p.TempRowId == tempRowId && p.AttrCd == detail.AttrCd) + 1);
-
-            var productAttr = new ClProductAttr
-            {
-                BatchId = batchId,
-                TempRowId = tempRowId,
-                AttrCd = detail.AttrCd,
-                AttrSeq = attrSeq,
-                SourceId = $"col_{csvColumnIndex}",
-                SourceLabel = headerName,
-                SourceRaw = transformedValue ?? "",  // CSV 原始值（经过 trim）
-                ValueText = null,  // INGEST 段階では未設定 (CLEANSE で設定)
-                ValueNum = null,
-                ValueDate = null,
-                ValueCd = null,
-                GListItemId = null,
-                DataType = null,   // INGEST 段階では未確定 (CLEANSE で m_attr_definition と比較して確定)
-                QualityFlag = "OK",  // 初始化为 OK
-                QualityDetailJson = JsonSerializer.Serialize(new
-                {
-                    empty_value = string.IsNullOrWhiteSpace(transformedValue),
-                    processing_stage = "INGEST",
-                    is_required = detail.IsRequired
-                }),
-                ProvenanceJson = JsonSerializer.Serialize(new
-                {
-                    stage = "INGEST",
-                    from = isInjectedValue ? "INJECTED" : "CSV",
-                    via = "eav_map",
-                    projection_kind = "EAV",
-                    profile_id = detail.ProfileId,
-                    column_seq = csvColumnIndex,
-                    csv_header = headerName,
-                    transform_expr = detail.TransformExpr ?? ""
-                }),
-                RuleVersion = "1.0"
-            };
-
-            _productAttrs.Add(productAttr);
-        }
-
-        /// <summary>
-        /// 创建单条 EAV 属性记录
-        /// </summary>
-        private void CreateSingleEavAttribute(
-            string batchId, Guid tempRowId, MDataImportD detail,
-            int csvColumnIndex, string headerName, string splitValue,
-            bool isInjectedValue, string sourceRaw, short? attrSeqOverride = null)
-        {
-            var attrSeq = attrSeqOverride ?? (short)(_productAttrs.Count(p =>
-                p.TempRowId == tempRowId && p.AttrCd == detail.AttrCd) + 1);
-
-            var productAttr = new ClProductAttr
-            {
-                BatchId = batchId,
-                TempRowId = tempRowId,
-                AttrCd = detail.AttrCd,
-                AttrSeq = attrSeq,
-                SourceId = $"col_{csvColumnIndex}",
-                SourceLabel = headerName,
-                SourceRaw = sourceRaw,  // 保存完整的原始值（未分割前）
-                ValueText = null,
-                ValueNum = null,
-                ValueDate = null,
-                ValueCd = null,
-                GListItemId = null,
-                DataType = null,
-                QualityFlag = "OK",
-                QualityDetailJson = JsonSerializer.Serialize(new
-                {
-                    empty_value = string.IsNullOrWhiteSpace(splitValue),
-                    split_value = splitValue,  // 分割后的单个值
-                    processing_stage = "INGEST",
-                    is_required = detail.IsRequired,
-                    attr_seq = attrSeq
-                }),
-                ProvenanceJson = JsonSerializer.Serialize(new
-                {
-                    stage = "INGEST",
-                    from = isInjectedValue ? "INJECTED" : "CSV",
-                    via = "eav_map",
-                    projection_kind = "EAV",
-                    profile_id = detail.ProfileId,
-                    column_seq = csvColumnIndex,
-                    csv_header = headerName,
-                    transform_expr = detail.TransformExpr ?? "",
-                    split_index = attrSeq - 1
-                }),
-                RuleVersion = "1.0"
-            };
-
-            _productAttrs.Add(productAttr);
-        }
-
         #endregion
 
         #region フロー7-9: 固定→EAV投影、EAV生成、メタ付与
@@ -530,13 +424,13 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
         /// 9. 補助キー・メタの付与 (batch_id, temp_row_id, attr_seq)
         /// </summary>
         private async Task GenerateProductAttributesAsync(
-            string batchId, string groupCompanyCd, List<MDataImportD> importDetails)
+            string batchId, string groupCompanyCd, List<MDataImportD> importDetails,string dataKind)
         {
             // 清空之前添加的所有属性数据(包括 EAV 等),重新生成 PRODUCT_MST 的数据
             _productAttrs.Clear();
 
             // 获取所有必要的映射表数据
-            var attrMaps = await _dataService.GetFixedToAttrMapsAsync(groupCompanyCd, "PRODUCT");
+            var attrMaps = await _dataService.GetFixedToAttrMapsAsync(groupCompanyCd, dataKind);
             var attrDefinitions = await _dataService.GetAttrDefinitionsAsync();
 
             // 从 m_data_import_d 中过滤出 projection_kind == "PRODUCT_MST" 的记录,保持原始顺序
@@ -874,22 +768,22 @@ private async Task<(int readCount, int okCount, int ngCount)> ReadCsvAndSaveToTe
             }
         }
 
-        /// <summary>
-        /// extras_json から processed_columns を抽出
-        /// </summary>
-        private Dictionary<string, object> ExtractProcessedColumns(Dictionary<string, object> extrasRoot)
-        {
-            if (extrasRoot.ContainsKey("processed_columns") && extrasRoot["processed_columns"] != null)
-            {
-                try
-                {
-                    return JsonSerializer.Deserialize<Dictionary<string, object>>(
-                        extrasRoot["processed_columns"].ToString() ?? "{}") ?? new Dictionary<string, object>();
-                }
-                catch { }
-            }
-            return new Dictionary<string, object>();
-        }
+        // /// <summary>
+        // /// extras_json から processed_columns を抽出
+        // /// </summary>
+        // private Dictionary<string, object> ExtractProcessedColumns(Dictionary<string, object> extrasRoot)
+        // {
+        //     if (extrasRoot.ContainsKey("processed_columns") && extrasRoot["processed_columns"] != null)
+        //     {
+        //         try
+        //         {
+        //             return JsonSerializer.Deserialize<Dictionary<string, object>>(
+        //                 extrasRoot["processed_columns"].ToString() ?? "{}") ?? new Dictionary<string, object>();
+        //         }
+        //         catch { }
+        //     }
+        //     return new Dictionary<string, object>();
+        // }
 
         #endregion
 
